@@ -3,10 +3,8 @@ import numpy as np
 import copy
 #import matplotlib.pylab as plt
 
-#########################################################
-###  Give root equations one variables Newton method  ###
-#########################################################
 
+# Give root equations one variables Newton method
 def rootNtest(x0,fName,diagnostic=0):
     def difF(x0,h):
         t=2*h
@@ -347,19 +345,20 @@ def int2d(lim,n_points,f_name):
 
 
 # Euler method
-def dyEuler(init_cond,lim,right_funct,nintervals=1000,out_err='noerr'):
+def ode_euler(init_cond, lim, r_funct, n_int=1000, out_err = False):
     def main_funct(N):
         t=np.linspace(lim[0],lim[1],N+1)
         dt=(lim[1]-lim[0])/N
         y=np.zeros(N+1)
         y[0]=init_cond[0]
         for i in range(N):
-            ytmp=y[i]+right_funct[0](t[i],y[i])*dt/2
-            y[i+1]=y[i]+right_funct[0](t[i]+dt/2,ytmp)*dt
+            ytmp=y[i]+r_funct[0](t[i],y[i])*dt/2
+            y[i+1]=y[i]+r_funct[0](t[i]+dt/2,ytmp)*dt
         return t,y
-    t1,y1=main_funct(nintervals)
-    t2,y2=main_funct(nintervals*2)
-    t3,y3=main_funct(nintervals*4)
+
+    _, y1=main_funct(n_int)
+    _, y2=main_funct(n_int*2)
+    t3,y3=main_funct(n_int*4)
     y3=y3[0::4]
     t3=t3[0::4]
     d1=y2[0::2]-y1
@@ -379,53 +378,104 @@ def dyEuler(init_cond,lim,right_funct,nintervals=1000,out_err='noerr'):
         else:
             newR.append(abs(itt))
     err=max(newR)
-    if out_err=='noerr':
-        return t3,y3
-    else:
-        return t3,y3,np.log(err)/np.log(10)
 
+    if out_err:
+        return t3,y3,np.log(err)/np.log(10)
+    else:
+        return t3,y3
+
+
+# CROS method
+def ode_cros(init_cond, lim, r_funct, n_int=200, out_err = False):
+    def der_fun(ii, t, y):
+        h = 1e-5
+        return (r_funct(t[ii-1], y[ii-1] * (1 + h)) - r_funct(t[ii-1], y[ii-1] * (1 - h))) / (2 * h * y[ii-1])
+
+    def main_funct(N):
+        t = np.linspace(lim[0], lim[1], N+1)
+        dt = (lim[1] - lim[0]) / N
+
+        y = np.zeros(N + 1)
+        y[0] = init_cond
+
+        a = np.complex128('1+j') / 2.0
+
+        for ii in range(1, N+1):
+            w = r_funct(t[ii-1] + dt / 2.0, y[ii-1]) / (1 - a * der_fun(ii, t, y) * dt)
+            y[ii] = y[ii-1] + np.real(w) * dt
+        
+        return t, y
+
+    _, y1 = main_funct(n_int)
+    _, y2 = main_funct(n_int*2)
+    t3, y3 = main_funct(n_int*4)
+
+    y3 = y3[0::4]
+    t3 = t3[0::4]
+
+    d1 = y2[0::2] - y1
+    d2 = y3 - y2[0::2]
+    q = d1 / d2
+
+    R = d2 / (q-1)
+    R[np.where(np.isnan(R))[0]] = 0
+
+    y3 = y3 + R
+
+    if out_err:
+        return t3, y3, max([0 if math.isnan(itt) else abs(itt) for itt in abs(R)])
+    else: 
+        return t3, y3
 
 
 # Runge-Kutta method
-def ode45(init_cond,lim,r_funct,n_int=1000,out_mode='err'):
-    n_var=len(init_cond)
+def ode45(init_cond, lim, r_funct, n_int=1000, out_err=False):
+    n_var = len(init_cond)
+
     def main_funct(N):
-        t=np.linspace(lim[0],lim[1],N+1)
-        dt=(lim[1]-lim[0])/N
-        y=-math.inf*np.ones((N+1,n_var))
-        y[0]=init_cond
+        t=np.linspace(lim[0],lim[1], N+1)
+        dt = (lim[1]-lim[0])/N
+        y = -math.inf*np.ones((N+1, n_var))
+
+        y[0] = init_cond
+
         for i in range(N):
-            arg1=y[i,:]
-            f1=r_funct(arg1,t[i])
-            arg2=y[i,:]+dt/2*np.array(f1)
-            f2=r_funct(arg2,t[i]+dt/2)
-            arg3=y[i,:]+dt/2*np.array(f2)
-            f3=r_funct(arg3,t[i]+dt/2)
-            arg4=y[i,:]+dt*np.array(f3)
-            f4=r_funct(arg4,t[i]+dt)
-            y[i+1,:]=y[i,:]+dt/6*(np.array(f1)+2*np.array(f2)+2*np.array(f3)+np.array(f4))
+            arg1 = y[i,:]
+            f1 = r_funct(arg1,t[i])
+
+            arg2 = y[i,:] + dt/2 * np.array(f1)
+            f2 = r_funct(arg2,t[i] + dt/2)
+
+            arg3 = y[i,:] + dt/2 * np.array(f2)
+            f3 = r_funct(arg3,t[i] + dt/2)
+
+            arg4 = y[i,:] + dt * np.array(f3)
+            f4 = r_funct(arg4, t[i] + dt)
+
+            y[i+1,:] = y[i,:] + dt/6 * (np.array(f1) + 2*np.array(f2) + 2*np.array(f3) +np.array(f4))
+
         return t,y
-    r=2
-    t1,y1=main_funct(n_int)
-    t2,y2=main_funct(n_int*r)
-    t3,y3=main_funct(n_int*r*r)
-    y3=y3[0::4,:]
-    t3=t3[0::4]
-    d1=y2[0::2,:]-y1
-    d2=y3-y2[0::2,:]
-    q=d1/d2
-    R=d2/(q-1)
+    
+    _,y1 = main_funct(n_int)
+    _,y2 = main_funct(n_int*2)
+    t3,y3 = main_funct(n_int*4)
 
-    ind=np.where(np.isnan(R))[0]
-    R[ind]=0
-    q[ind]='inf'
+    y3 = y3[0::4,:]
+    t3 = t3[0::4]
 
-    y3=y3+R
-    err=max(R[:,0])
-    if out_mode=='err':
-        return t3,y3,np.log(err)/np.log(10)
-    elif out_mode=='diagn':
-        return t3,y3,np.log(err)/np.log(10),np.log(min(abs(q[:,0])))/np.log(r)
+    d1 = y2[0::2,:] - y1
+    d2 = y3 - y2[0::2,:]
+    q = d1 / d2
+
+    R = d2 / (q-1)
+    R[np.where(np.isnan(R[:,0]))[0]] = 0
+
+    y3 = y3 + R
+
+    if out_err:
+        return t3, y3, max([0 if math.isnan(itt) else abs(itt) for itt in abs(R[:,0])])
+    else:
+        return t3, y3
 
 
 # Gauss method
